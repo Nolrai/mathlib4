@@ -17,7 +17,7 @@ Given a type `X` and a predicate `p : X → Prop`:
 * `Set X` : the type of sets whose elements have type `X`
 * `{a : X | p a} : Set X` : the set of all elements of `X` satisfying `p`
 * `{a | p a} : Set X` : a more concise notation for `{a : X | p a}`
-* `{a ∈ S | p a} : Set X` : given `S : Set X`, the subset of `S` consisting of 
+* `{a ∈ S | p a} : Set X` : given `S : Set X`, the subset of `S` consisting of
    its elements satisfying `p`.
 
 ## Implementation issues
@@ -34,8 +34,9 @@ universes u v
 
 def Set (α : Type u) := α → Prop
 
-def setOf {α : Type u} (p : α → Prop) : Set α :=
-p
+def setOf {α : Type u} (p : α → Prop) : Set α := p
+
+theorem setOfExt {α : Type u} (p : α → Prop) (x : α) : setOf p x = p x := rfl
 
 class Subset (α : Type u) where
   subset : α → α → Prop
@@ -64,6 +65,10 @@ s a
 
 instance : Mem α (Set α) :=
 ⟨Set.mem⟩
+
+theorem memDef {α : Type u} (S : Set α) (x : α) : (x ∈ S) = S x := rfl
+
+theorem memSetOf {α : Type u} (p : α → Prop) (x : α) : (x ∈ setOf p) = p x := rfl
 
 protected def subset (s₁ s₂ : Set α) :=
 ∀ {a}, a ∈ s₁ → a ∈ s₂
