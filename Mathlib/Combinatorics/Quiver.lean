@@ -46,16 +46,12 @@ structure Prefunctor (V : Type u₁) [Quiver.{v₁} V] (W : Type u₂) [Quiver.{
 
 namespace Prefunctor
 
--- This is a bit hacky but I can't figure out how to specify the general "id" instead of
--- the Prefunctor one if we are _in_ the Prefunctor namespace.
-local notation "id'" => id
-
 /--
 The identity morphism between quivers.
 -/
 @[simp]
 def id (V : Type u) [Quiver V] : Prefunctor V V :=
-{ obj := id',
+{ obj := _root_.id,
   map := λ f => f, }
 
 instance (V : Type u) [Quiver V] : Inhabited (Prefunctor V V) := ⟨id V⟩
@@ -251,36 +247,51 @@ instance {V : Type u} [Quiver V] [Arborescence V] (b : V) : Unique (Path (root V
 Arborescence.uniquePath b
 
 /-- An `L`-labelling of a Quiver assigns to every arrow an element of `L`. -/
-def labelling (V : Type u) [Quiver V] (L : Sort*) := Π ⦃a b : V⦄, (a ⟶ b) → L
+def labelling (V : Type u) [Quiver V] (L : Sort v) := ∀ {a b : V}, (a ⟶ b) → L
 
-instance {V : Type u} [Quiver V] (L) [inhabited L] : inhabited (labelling V L) :=
-⟨λ a b e, default L⟩
+instance {V : Type u} [Quiver V] (L) [Inhabited L] : Inhabited (labelling V L) :=
+⟨λ _ => Inhabited.default⟩
+
+section arborescence
+
+variable {V : Type u} [Quiver V] (r : V)
+variable   (height : V → ℕ)
+variable   (height_lt : ∀ {a b}, (a ⟶ b) → height a < height b)
+variable   (unique_arrow : ∀ {a b c : V} (e : a ⟶ c) (f : b ⟶ c), a = b ∧ (e ≅ f))
+variable   (root_or_arrow : (b : V) -> (b ≠ r) → (Σ (a : V), a ⟶ b))
 
 /-- To show that `[Quiver V]` is an Arborescence with root `r : V`, it suffices to
   - provide a height function `V → ℕ` such that every arrow goes from a
     lower vertex to a higher vertex,
   - show that every vertex has at most one arrow to it, and
   - show that every vertex other than `r` has an arrow to it. -/
-noncomputable def arborescence_mk {V : Type u} [Quiver V] (r : V)
-  (height : V → ℕ)
-  (height_lt : ∀ ⦃a b⦄, (a ⟶ b) → height a < height b)
-  (unique_arrow : ∀ ⦃a b c : V⦄ (e : a ⟶ c) (f : b ⟶ c), a = b ∧ e == f)
-  (root_or_arrow : ∀ b, b = r ∨ ∃ a, nonempty (a ⟶ b)) : Arborescence V :=
-{ root := r,
-  unique_path := λ b, ⟨classical.inhabited_of_nonempty
-    begin
-      rcases (show ∃ n, height b < n, from ⟨_, lt_add_one _⟩) with ⟨n, hn⟩,
-      induction n with n ih generalizing b,
-      { exact false.elim (nat.not_lt_zero _ hn) },
-      rcases root_or_arrow b with ⟨⟨⟩⟩ | ⟨a, ⟨e⟩⟩,
-      { exact ⟨path.Nil⟩ },
-      { rcases ih a (lt_of_lt_of_le (height_lt e) (nat.ltSucc_iff.mp hn)) with ⟨p⟩,
-        exact ⟨p.Cons e⟩ }
-    end,
-    begin
-      have height_le : ∀ {a b}, Path a b → height a ≤ height b,
-      { intros a b p, induction p with b c p e ih, refl,
-        exact le_of_lt (lt_of_le_of_lt ih (height_lt e)) },
+
+lemma Nat.lt_add_one (n : Nat) : n < n + 1 :=
+  by {
+    rw [Nat.add_one];
+    apply Nat.ltSuccSelf
+  }
+
+def mk_path_for_hight (n : Nat) : ∀ (b : V) (hight_b_lt_n : height b < n), Path r b :=
+  have h (k : ℕ) : ((m : ℕ) → m < k → (c : V) → height b < m → Path r c) → ((c : V) → height c < k → Path r c) :=
+    λ ih => λ c => λ hight_c_lt_k =>  ;
+  Nat.strong_rec_on n h
+
+
+def mk_path (b : V) [DecidableEq V] : Path r b :=
+  match  ( ⟨_, Nat.lt_add_one _⟩ : {n // height b < n}) with
+    | ⟨0, hn⟩ =>@False.elim _ (Nat.notLtZero _ hn)
+    | ⟨n + 1, hn⟩ =>
+        if b_r : b = r
+        then
+          by {rw [b_r]; exact Path.Nil}
+        else match root_or_arrow b b_r with
+          | ⟨a, e⟩ =>
+            (mk_path a).Cons e
+
+def path_is_unique (b : V) : Unique (Path r b) := ⟨mk_path b, by {
+      have height_le : ∀ {a b}, Path a b → height a ≤ height b
+        | { intros a b p, induction p with b c p e ih, refl, exact le_of_lt (lt_of_le_of_lt ih (height_lt e)) },
       suffices : ∀ p q : Path r b, p = q,
       { intro p, apply this },
       intros p q, induction p with a c p e ih; cases q with b _ q f,
@@ -288,7 +299,12 @@ noncomputable def arborescence_mk {V : Type u} [Quiver V] (r : V)
       { exact false.elim (lt_irrefl _ (lt_of_le_of_lt (height_le q) (height_lt f))) },
       { exact false.elim (lt_irrefl _ (lt_of_le_of_lt (height_le p) (height_lt e))) },
       { rcases unique_arrow e f with ⟨⟨⟩, ⟨⟩⟩, rw ih },
-    end ⟩ }
+    } ⟩
+
+def arborescence_mk : Arborescence V :=
+{ root := r,
+  unique_path := unique_path'
+   }
 
 /-- `rooted_connected r` means that there is a Path from `r` to any other vertex. -/
 class rooted_connected {V : Type u} [Quiver V] (r : V) : Prop :=
@@ -365,7 +381,7 @@ variable {V}
 protected def mk : V → weakly_connected_component V := quotient.mk'
 
 instance : has_coe_t V (weakly_connected_component V) := ⟨weakly_connected_component.mk⟩
-instance [inhabited V] : inhabited (weakly_connected_component V) := ⟨↑(default V)⟩
+instance [Inhabited V] : Inhabited (weakly_connected_component V) := ⟨↑(default V)⟩
 
 protected lemma eq (a b : V) :
   (a : weakly_connected_component V) = b ↔ nonempty (Path (a : symmetrify V) (b : symmetrify V)) :=
