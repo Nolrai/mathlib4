@@ -254,52 +254,43 @@ instance {V : Type u} [Quiver V] (L) [Inhabited L] : Inhabited (labelling V L) :
 
 section arborescence
 
-variable {V : Type u} [Quiver V] (r : V)
-variable   (height : V → ℕ)
-variable   (height_lt : ∀ {a b}, (a ⟶ b) → height a < height b)
-variable   (unique_arrow : ∀ {a b c : V} (e : a ⟶ c) (f : b ⟶ c), a = b ∧ (e ≅ f))
-variable   (root_or_arrow : (b : V) -> (b ≠ r) → (Σ (a : V), a ⟶ b))
-
+/- CSPAM - I gave up on getting strong induction to work for now -/
 /-- To show that `[Quiver V]` is an Arborescence with root `r : V`, it suffices to
   - provide a height function `V → ℕ` such that every arrow goes from a
     lower vertex to a higher vertex,
   - show that every vertex has at most one arrow to it, and
   - show that every vertex other than `r` has an arrow to it. -/
 
-lemma Nat.lt_add_one (n : Nat) : n < n + 1 :=
+lemma Nat.lt_add_one (n : ℕ) : n < n + 1 :=
   by {
     rw [Nat.add_one];
     apply Nat.ltSuccSelf
   }
 
-def mk_path_for_hight (n : Nat) : ∀ (b : V) (hight_b_lt_n : height b < n), Path r b :=
-  have h (k : ℕ) : ((m : ℕ) → m < k → (c : V) → height b < m → Path r c) → ((c : V) → height c < k → Path r c) :=
-    λ ih => λ c => λ hight_c_lt_k =>  ;
-  Nat.strong_rec_on n h
+variable {V : Type v} [q : Quiver V] (r : V) [DecidableEq V]
+variable (height : V → ℕ)
+variable (height_succ : ∀ {a b}, (a ⟶ b) → height b = height a + 1)
+variable (unique_arrow : ∀ {a b c : V} (e : a ⟶ c) (f : b ⟶ c), a = b ∧ (e ≅ f))
+variable (root_or_arrow : (b : V) -> (b ≠ r) → (Σ (a : V), a ⟶ b))
 
-
-def mk_path (b : V) [DecidableEq V] : Path r b :=
-  match  ( ⟨_, Nat.lt_add_one _⟩ : {n // height b < n}) with
-    | ⟨0, hn⟩ =>@False.elim _ (Nat.notLtZero _ hn)
-    | ⟨n + 1, hn⟩ =>
-        if b_r : b = r
-        then
-          by {rw [b_r]; exact Path.Nil}
-        else match root_or_arrow b b_r with
-          | ⟨a, e⟩ =>
-            (mk_path a).Cons e
-
-def path_is_unique (b : V) : Unique (Path r b) := ⟨mk_path b, by {
-      have height_le : ∀ {a b}, Path a b → height a ≤ height b
-        | { intros a b p, induction p with b c p e ih, refl, exact le_of_lt (lt_of_le_of_lt ih (height_lt e)) },
-      suffices : ∀ p q : Path r b, p = q,
-      { intro p, apply this },
-      intros p q, induction p with a c p e ih; cases q with b _ q f,
-      { refl },
-      { exact false.elim (lt_irrefl _ (lt_of_le_of_lt (height_le q) (height_lt f))) },
-      { exact false.elim (lt_irrefl _ (lt_of_le_of_lt (height_le p) (height_lt e))) },
-      { rcases unique_arrow e f with ⟨⟨⟩, ⟨⟩⟩, rw ih },
-    } ⟩
+def mk_path_for_hight : ∀ (n) (b : V) (b_height_eq : height b = n), Path r b
+  | 0, b, b_height =>
+    if h : b = r
+      then by {
+        rw [ h];
+        exact Path.Nil
+      }
+      else
+        have : ∃ k, k.succ = height b :=
+          match root_or_arrow b h with
+          | ⟨a, arr⟩ => ⟨height a, (height_succ arr).symm⟩
+        by {
+          exfalso;
+          apply Nat.succ_ne_zero this.1;
+          rw [← b_height];
+          apply this.2
+        }
+  | (n+1), b, b_hight => _
 
 def arborescence_mk : Arborescence V :=
 { root := r,
