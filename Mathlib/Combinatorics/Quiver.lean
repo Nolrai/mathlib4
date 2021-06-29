@@ -154,7 +154,7 @@ def WideSubquiver_equivSet_total {V : Type v} [Quiver V] :
 /-- `G.Path a b` is the type of paths from `a` to `b` through the arrows of `G`. -/
 inductive Path {V : Type u} [Quiver.{v} V] (a : V) : V → Sort (max (u+1) (v+1))
 | Nil  : Path a a
-| Cons : {b c : V} -> Path a b → (b ⟶ c) → Path a c
+| Cons : Path a b → (b ⟶ c) → Path a c
 
 /-- An arrow viewed as a Path of length one. -/
 def hom.to_path {V} [Quiver V] {a b : V} (e : a ⟶ b) : Path a b :=
@@ -227,24 +227,17 @@ def map_path {a b : V} : Path a b → Path (F.obj a) (F.obj b)
 
 end prefunctor
 
-/-- CSPAM should be moved somewhere more basic -/
-class Unique (α : Type u) extends Inhabited α :=
- (onlyDefault {y : α} : y = default)
-
 namespace Quiver
 
 /-- A Quiver is an Arborescence when there is a unique Path from the default vertex
     to every other vertex. -/
 class Arborescence (V : Type u) [Quiver.{v} V] : Type (max u v) :=
 (root : V)
-(uniquePath (b : V) : Unique (Path root b))
+(unique_path (b : V) : ∃ p : Path root b, ∀ q, q = p)
 
 /-- The root of an Arborescence. -/
 def root (V : Type u) [Quiver V] [Arborescence V] : V :=
 Arborescence.root
-
-instance {V : Type u} [Quiver V] [Arborescence V] (b : V) : Unique (Path (root V) b) :=
-Arborescence.uniquePath b
 
 /-- An `L`-labelling of a Quiver assigns to every arrow an element of `L`. -/
 def labelling (V : Type u) [Quiver V] (L : Sort v) := ∀ {a b : V}, (a ⟶ b) → L
@@ -269,107 +262,193 @@ lemma Nat.lt_add_one (n : ℕ) : n < n + 1 :=
 
 variable {V : Type v} [q : Quiver V] (r : V) [DecidableEq V]
 variable (height : V → ℕ)
-variable (height_succ : ∀ {a b}, (a ⟶ b) → height b = height a + 1)
+variable (height_lt : ∀ {a b}, (a ⟶ b) → height a < height b)
 variable (unique_arrow : ∀ {a b c : V} (e : a ⟶ c) (f : b ⟶ c), a = b ∧ (e ≅ f))
-variable (root_or_arrow : (b : V) -> (b ≠ r) → (Σ (a : V), a ⟶ b))
+variable (root_or_arrow : {b : V} -> (b ≠ r) → (Σ (a : V), a ⟶ b))
 
-def mk_path_for_hight : ∀ (n) (b : V) (b_height_eq : height b = n), Path r b
-  | 0, b, b_height =>
-    if h : b = r
-      then by {
-        rw [ h];
-        exact Path.Nil
-      }
-      else
-        have : ∃ k, k.succ = height b :=
-          match root_or_arrow b h with
-          | ⟨a, arr⟩ => ⟨height a, (height_succ arr).symm⟩
-        by {
-          exfalso;
-          apply Nat.succ_ne_zero this.1;
-          rw [← b_height];
-          apply this.2
-        }
-  | (n+1), b, b_hight => _
+def height_path_le {a c} (p : Path a c) : height a ≤ height c :=
+  by
+    induction p with
+      | Nil => apply Nat.le_refl _
+      | Cons p arr ih =>
+        apply Nat.le_trans ih
+        apply Nat.le_of_lt
+        exact height_lt arr
+
+def mk_path_for_height : ∀ (n : ℕ) (b : V), height b ≤ n -> Path r b
+ | 0, b, b_height_le  =>
+  if h : b = r
+    then by
+      rw [← h]
+      exact Path.Nil
+    else by
+      let ⟨a, arr⟩ := root_or_arrow h
+      have : ∀ n, ¬ n < 0 := by {intros; simp; apply Nat.zero_le}
+      exfalso
+      apply this (height a)
+      apply Nat.lt_of_lt_of_le
+      apply height_lt arr
+      exact b_height_le
+
+ | (n+1), b, b_height_eq =>
+  if h : b = r
+    then by
+      rw [← h]
+      exact Path.Nil
+    else
+      let ⟨a, arr⟩ := root_or_arrow h
+      let a_height_le : height a ≤ n :=
+        by
+        have : height a < n+1 :=
+          Nat.lt_of_lt_of_le (height_lt arr) b_height_eq
+        simp
+        apply this
+      Path.Cons (mk_path_for_height n a a_height_le) arr
+
+instance mk_path (b : V) : (Path r b) :=
+  mk_path_for_height r height height_lt root_or_arrow (height b) b (Nat.le_refl _)
+
+def path_self_nil {a : V} (p : Path a a) : p = Path.Nil :=
+  match p with
+  | Path.Nil => rfl
+  | Path.Cons p arr =>
+    have : ∀ n : Nat, ¬ n < n := by
+      intros n
+      simp
+      apply Nat.le_refl
+    by
+      exfalso
+      apply this (height a)
+      apply Nat.lt_of_le_of_lt
+      apply (height_path_le height height_lt p)
+      apply (height_lt arr)
+
+theorem path_unique {a c : V} (p q : Path a c) : p = q := by
+  induction p with
+  | Nil => apply (path_self_nil height height_lt q).symm
+  | Cons p_path p_arrow ih =>
+    cases q with
+    | Nil => apply (path_self_nil height height_lt _)
+    | Cons q_path q_arrow =>
+      let ⟨b_eq, arrow_heq⟩ := unique_arrow p_arrow q_arrow
+      cases b_eq
+      cases arrow_heq
+      rw [← ih q_path]
 
 def arborescence_mk : Arborescence V :=
 { root := r,
-  unique_path := unique_path'
-   }
+  unique_path := λ b =>
+    let path : Path r b := mk_path r height height_lt root_or_arrow b
+    let is_unique (q : Path r b) : q = path :=
+      path_unique height height_lt unique_arrow q path
+    ⟨path, is_unique⟩
+}
+
+inductive nonempty (T : Type u) : Prop :=
+  | Some : T -> nonempty T
+
+open nonempty
 
 /-- `rooted_connected r` means that there is a Path from `r` to any other vertex. -/
 class rooted_connected {V : Type u} [Quiver V] (r : V) : Prop :=
-(nonempty_path : ∀ b : V, nonempty (Path r b))
+  (nonempty_path : (b : V) -> nonempty (Path r b))
 
 attribute [instance] rooted_connected.nonempty_path
 
-section geodesicSubtree
+-- Requires well_founded.min which hasn't been ported yet - CSPAM
+-- section geodesicSubtree
 
-variables {V : Type u} [Quiver.{v+1} V] (r : V) [rooted_connected r]
+-- variables {V : Type u} [Quiver.{v+1} V] (r : V) [rooted_connected r]
 
-/-- A Path from `r` of minimal length. -/
-noncomputable def shortest_path (b : V) : Path r b :=
-well_founded.min (measure_wf Path.length) Set.univ Set.univ_nonempty
+-- /-- A Path from `r` of minimal length. -/
+-- noncomputable def shortest_path (b : V) : Path r b :=
+-- well_founded.min (measure_wf Path.length) Set.univ Set.univ_nonempty
 
-/-- The length of a Path is at least the length of the shortest Path -/
-lemma shortest_pathSpec {a : V} (p : Path r a) :
-  (shortest_path r a).length ≤ p.length :=
-not_lt.mp (well_founded.not_lt_min (measure_wf _) Set.univ _ trivial)
+-- /-- The length of a Path is at least the length of the shortest Path -/
+-- lemma shortest_pathSpec {a : V} (p : Path r a) :
+--   (shortest_path r a).length ≤ p.length :=
+-- not_lt.mp (well_founded.not_lt_min (measure_wf _) Set.univ _ trivial)
 
-/-- A subquiver which by construction is an Arborescence. -/
-def geodesicSubtree : WideSubquiver V :=
-λ a b, { e | ∃ p : Path r a, shortest_path r b = p.Cons e }
+-- /-- A subquiver which by construction is an Arborescence. -/
+-- def geodesicSubtree : WideSubquiver V :=
+-- λ a b, { e | ∃ p : Path r a, shortest_path r b = p.Cons e }
 
-noncomputable instance geodesic_arborescence : Arborescence (geodesicSubtree r) :=
-arborescence_mk r (λ a, (shortest_path r a).length)
-(by { rintros a b ⟨e, p, h⟩,
-  rw [h, Path.length_cons, nat.ltSucc_iff], apply shortest_pathSpec })
-(by { rintros a b c ⟨e, p, h⟩ ⟨f, q, j⟩, cases h.symm.trans j, split; refl })
-(by { intro b, have : ∃ p, shortest_path r b = p := ⟨_, rfl⟩,
-  rcases this with ⟨p, hp⟩, cases p with a _ p e,
-  { exact or.inl rfl }, { exact or.inr ⟨a, ⟨⟨e, p, hp⟩⟩⟩ } })
+-- noncomputable instance geodesic_arborescence : Arborescence (geodesicSubtree r) :=
+-- arborescence_mk r (λ a, (shortest_path r a).length)
+-- (by { rintros a b ⟨e, p, h⟩,
+--   rw [h, Path.length_cons, nat.ltSucc_iff], apply shortest_pathSpec })
+-- (by { rintros a b c ⟨e, p, h⟩ ⟨f, q, j⟩, cases h.symm.trans j, split; refl })
+-- (by { intro b, have : ∃ p, shortest_path r b = p := ⟨_, rfl⟩,
+--   rcases this with ⟨p, hp⟩, cases p with a _ p e,
+--   { exact or.inl rfl }, { exact or.inr ⟨a, ⟨⟨e, p, hp⟩⟩⟩ } })
 
-end geodesicSubtree
+-- end geodesicSubtree
 
-variables (V : Type u) [Quiver.{v+1} V]
+end arborescence
+
+
+section has_reverse
+variable (V : Type u) [Quiver.{v+1} V]
 
 /-- A Quiver `has_reverse` if we can reverse an arrow `p` from `a` to `b` to get an arrow
     `p.reverse` from `b` to `a`.-/
 class has_reverse :=
-(reverse' : Π {a b : V}, (a ⟶ b) → (b ⟶ a))
+(reverse' : {a b : V} → (a ⟶ b) → (b ⟶ a))
 
-instance : has_reverse (symmetrify V) := ⟨λ a b e, e.swap⟩
+instance : has_reverse (symmetrify V) :=
+  ⟨λ e =>
+    match e with
+    | Sum.inl a => Sum.inr a
+    | Sum.inr a => Sum.inl a
+  ⟩
+end has_reverse
 
-variables {V} [has_reverse V]
+section reverse
+variable {V : Type u} [Quiver.{v+1} V] [has_reverse V]
 
 /-- Reverse the direction of an arrow. -/
-def reverse {a b : V} : (a ⟶ b) → (b ⟶ a) := has_reverse.reverse'
+def Hom.reverse {a b : V} : (a ⟶ b) → (b ⟶ a) := has_reverse.reverse'
 
 /-- Reverse the direction of a Path. -/
-def Path.reverse {a : V} : Π {b}, Path a b → Path b a
-| a Path.Nil := Path.Nil
-| b (Path.Cons p e) := (reverse e).to_path.comp p.reverse
+def Path.reverse {a :V} : {b : V} → Path a b → Path b a
+| .(a), Path.Nil => Path.Nil
+| b, (Path.Cons p e) => (Hom.reverse e).to_path.comp p.reverse
+end reverse
 
-variables (V)
+section zigzag
+variable (V : Type u) [Quiver.{v+1} V] [has_reverse V]
+
+open nonempty
 
 /-- Two vertices are related in the zigzag setoid if there is a
     zigzag of arrows from one to the other. -/
 def zigzagSetoid : Setoid V :=
-⟨λ a b, nonempty (Path (a : symmetrify V) (b : symmetrify V)),
- λ a, ⟨path.Nil⟩,
- λ a b ⟨p⟩, ⟨p.reverse⟩,
- λ a b c ⟨p⟩ ⟨q⟩, ⟨p.comp q⟩⟩
+  ⟨λ a b => nonempty (Path (a : symmetrify V) (b : symmetrify V)),
+    λ a => ⟨Path.Nil⟩,
+    by
+      intros x y p
+      cases p with | Some p =>
+      split
+      apply Path.reverse p,
+    by
+      intros x y z xy yz
+      cases xy with | Some xy =>
+      cases yz with | Some yz =>
+      apply Some (xy.comp yz)
+ ⟩
 
 /-- The type of weakly connected components of a directed graph. Two vertices are
     in the same weakly connected component if there is a zigzag of arrows from one
     to the other. -/
-def weakly_connected_component : Type* := quotient (zigzagSetoid V)
+def weakly_connected_component : Type u := Quotient (zigzagSetoid V)
+
+end zigzag
 
 namespace weakly_connected_component
-variable {V}
+variable {V} [Quiver.{v+1} V] [has_reverse V]
 
 /-- The weakly connected component corresponding to a vertex. -/
-protected def mk : V → weakly_connected_component V := quotient.mk'
+protected def mk : V → weakly_connected_component V := Quotient.mk V
 
 instance : has_coe_t V (weakly_connected_component V) := ⟨weakly_connected_component.mk⟩
 instance [Inhabited V] : Inhabited (weakly_connected_component V) := ⟨↑(default V)⟩
