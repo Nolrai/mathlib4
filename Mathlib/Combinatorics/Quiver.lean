@@ -422,7 +422,7 @@ open nonempty
 
 /-- Two vertices are related in the zigzag setoid if there is a
     zigzag of arrows from one to the other. -/
-def zigzagSetoid : Setoid V :=
+instance zigzagSetoid : Setoid V :=
   ⟨λ a b => nonempty (Path (a : symmetrify V) (b : symmetrify V)),
     λ a => ⟨Path.Nil⟩,
     by
@@ -448,14 +448,20 @@ namespace weakly_connected_component
 variable {V} [Quiver.{v+1} V] [has_reverse V]
 
 /-- The weakly connected component corresponding to a vertex. -/
-protected def mk : V → weakly_connected_component V := Quotient.mk V
+protected def mk : V → weakly_connected_component V := Quotient.mk (s := zigzagSetoid V)
 
-instance : has_coe_t V (weakly_connected_component V) := ⟨weakly_connected_component.mk⟩
-instance [Inhabited V] : Inhabited (weakly_connected_component V) := ⟨↑(default V)⟩
+instance : Coe V (weakly_connected_component V) := ⟨weakly_connected_component.mk⟩
+instance [Inhabited V] : Inhabited (weakly_connected_component V) :=
+  ⟨↑(Inhabited.default : V)⟩
 
 protected lemma eq (a b : V) :
   (a : weakly_connected_component V) = b ↔ nonempty (Path (a : symmetrify V) (b : symmetrify V)) :=
-quotient.eq'
+{
+  mp :=
+    λ (h : weakly_connected_component.mk a = weakly_connected_component.mk b) =>
+      (λ (this : a ≈ b) => this) (Quotient.exact h),
+  mpr := λ (h : nonempty (Path a b)) => Quotient.sound h
+}
 
 end weakly_connected_component
 
